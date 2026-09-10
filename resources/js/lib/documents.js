@@ -19,8 +19,17 @@ export function csrfToken() {
     return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
 }
 
-export async function listDocuments() {
-    const response = await fetch('/documents', {
+export async function listDocuments(query = '') {
+    const params = new URLSearchParams();
+    const search = query.trim();
+
+    if (search !== '') {
+        params.set('q', search);
+    }
+
+    const url = params.size > 0 ? `/documents?${params}` : '/documents';
+
+    const response = await fetch(url, {
         headers: {
             Accept: 'application/json',
             'X-Requested-With': 'XMLHttpRequest',

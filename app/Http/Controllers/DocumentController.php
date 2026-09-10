@@ -6,6 +6,7 @@ use App\Ai\IdMetadataExtractor;
 use App\Ai\OllamaClient;
 use App\Enums\DocType;
 use App\Http\Requests\AskDocumentAiRequest;
+use App\Http\Requests\ListDocumentsRequest;
 use App\Http\Requests\StoreDocumentRequest;
 use App\Http\Requests\UpdateIdMetadataRequest;
 use App\Models\Document;
@@ -17,13 +18,16 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DocumentController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(ListDocumentsRequest $request): JsonResponse
     {
+        $search = $request->search();
+
         $documents = Document::query()
             ->with(['ocrResult', 'idMetadata'])
+            ->when($search !== '', fn ($query) => $query->searchOcrText($search))
             ->latest()
             ->get()
-            ->map(fn (Document $document): array => $document->toApiArray())
+            ->map(fn (Document $document): array => $document->toApiArray($search))
             ->values();
 
         return response()->json($documents);

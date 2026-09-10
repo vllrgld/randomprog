@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\DocType;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
@@ -38,9 +39,25 @@ class Document extends Model
     }
 
     /**
+     * @param  Builder<static>  $query
+     */
+    public function scopeSearchOcrText(Builder $query, string $term): void
+    {
+        $term = trim($term);
+
+        if ($term === '') {
+            return;
+        }
+
+        $query->whereHas('ocrResult', function (Builder $ocr) use ($term): void {
+            $ocr->matchingParsedText($term);
+        });
+    }
+
+    /**
      * @return array<string, mixed>
      */
-    public function toApiArray(): array
+    public function toApiArray(string $search = ''): array
     {
         return [
             'id' => $this->id,
@@ -61,6 +78,9 @@ class Document extends Model
                 : null,
             'ai_url' => $this->ocrResult !== null
                 ? route('documents.ai', $this)
+                : null,
+            'ocr_snippet' => $search !== ''
+                ? $this->ocrResult?->snippet($search)
                 : null,
         ];
     }

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import AppSidebar from './AppSidebar';
 import DocumentsAttachment from './DocumentsAttachment';
@@ -35,6 +37,14 @@ function Dashboard({ onLogout }) {
     const [attachments, setAttachments] = useState([]);
     const [listError, setListError] = useState(null);
     const [preview, setPreview] = useState(null);
+    const [searchInput, setSearchInput] = useState('');
+    const [search, setSearch] = useState('');
+
+    useEffect(() => {
+        const timeout = setTimeout(() => setSearch(searchInput.trim()), 300);
+
+        return () => clearTimeout(timeout);
+    }, [searchInput]);
 
     useEffect(() => {
         if (page !== 'documents') {
@@ -45,7 +55,7 @@ function Dashboard({ onLogout }) {
 
         let cancelled = false;
 
-        listDocuments()
+        listDocuments(search)
             .then((documents) => {
                 if (!cancelled) {
                     setAttachments(documents);
@@ -61,7 +71,7 @@ function Dashboard({ onLogout }) {
         return () => {
             cancelled = true;
         };
-    }, [page]);
+    }, [page, search]);
 
     return (
         <SidebarProvider>
@@ -69,18 +79,33 @@ function Dashboard({ onLogout }) {
             <SidebarInset>
                 <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
                     <SidebarReopenTrigger />
-                    <h1 className="text-sm font-medium">
+                    <h1 className="shrink-0 text-sm font-medium">
                         {page === 'home' ? 'Home' : page === 'documents' ? 'Documents' : 'Settings'}
                     </h1>
                     {page === 'documents' && (
-                        <div className="ml-auto">
-                            <DocumentsAttachment
-                                onAttach={(document) => {
-                                    setAttachments((current) => [document, ...current]);
-                                    setPreview(document);
-                                }}
-                            />
-                        </div>
+                        <>
+                            <div className="flex min-w-0 flex-1 justify-center px-2">
+                                <div className="relative w-full max-w-xs">
+                                    <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                                    <Input
+                                        type="search"
+                                        value={searchInput}
+                                        onChange={(event) => setSearchInput(event.target.value)}
+                                        placeholder="Search OCR text…"
+                                        aria-label="Search OCR text"
+                                        className="pl-8"
+                                    />
+                                </div>
+                            </div>
+                            <div className="shrink-0">
+                                <DocumentsAttachment
+                                    onAttach={(document) => {
+                                        setAttachments((current) => [document, ...current]);
+                                        setPreview(document);
+                                    }}
+                                />
+                            </div>
+                        </>
                     )}
                 </header>
 
@@ -90,20 +115,29 @@ function Dashboard({ onLogout }) {
                         (listError ? (
                             <p className="text-destructive">{listError}</p>
                         ) : attachments.length === 0 ? (
-                            <p className="text-muted-foreground">No documents yet. Attach a file to get started.</p>
+                            <p className="text-muted-foreground">
+                                {search
+                                    ? 'No documents match that OCR text.'
+                                    : 'No documents yet. Attach a file to get started.'}
+                            </p>
                         ) : (
                             <ul className="divide-y rounded-lg border">
                                 {attachments.map((attachment) => (
-                                    <li key={attachment.id} className="flex items-center justify-between gap-4 px-3 py-2 text-sm">
-                                        <Button
-                                            variant="link"
-                                            title={attachment.name}
-                                            className="h-auto min-w-0 flex-1 justify-start px-0 text-foreground"
-                                            onClick={() => setPreview(attachment)}
-                                        >
-                                            <span className="truncate">{attachment.name}</span>
-                                        </Button>
-                                        <span className="text-muted-foreground shrink-0 text-xs">
+                                    <li key={attachment.id} className="flex items-start justify-between gap-4 px-3 py-2 text-sm">
+                                        <div className="min-w-0 flex-1">
+                                            <Button
+                                                variant="link"
+                                                title={attachment.name}
+                                                className="h-auto w-full justify-start px-0 text-foreground"
+                                                onClick={() => setPreview(attachment)}
+                                            >
+                                                <span className="truncate">{attachment.name}</span>
+                                            </Button>
+                                            {attachment.ocr_snippet ? (
+                                                <p className="text-muted-foreground line-clamp-2 text-xs">{attachment.ocr_snippet}</p>
+                                            ) : null}
+                                        </div>
+                                        <span className="text-muted-foreground shrink-0 pt-1 text-xs">
                                             {docTypeLabel(attachment.doc_type)}
                                             {' · '}
                                             {formatFileSize(attachment.size)}
