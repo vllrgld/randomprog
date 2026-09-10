@@ -2,19 +2,24 @@
 
 namespace App\Http\Controllers;
 
+use App\Ai\DocumentContextText;
 use App\Ai\IdMetadataExtractor;
 use App\Ai\OllamaClient;
 use App\Enums\DocType;
 use App\Http\Requests\AskDocumentAiRequest;
 use App\Http\Requests\ListDocumentsRequest;
 use App\Http\Requests\StoreDocumentRequest;
+use App\Http\Requests\UpdateDocumentFileRequest;
 use App\Http\Requests\UpdateIdMetadataRequest;
 use App\Models\Document;
 use App\Ocr\DocumentOcr;
 use App\PdfCompression\StoredPdfCompressor;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 class DocumentController extends Controller
 {
@@ -45,8 +50,13 @@ class DocumentController extends Controller
             'file_size' => $stored['size'],
         ]);
 
-        if ($stored['compression_ran']) {
+        try {
             $ocr->process($document);
+        } catch (Throwable $exception) {
+            Log::warning('OCR failed after upload.', [
+                'document_id' => $document->id,
+                'message' => $exception->getMessage(),
+            ]);
         }
 
         return response()->json([
@@ -96,31 +106,59 @@ class DocumentController extends Controller
         ]);
     }
 
-    public function ai(AskDocumentAiRequest $request, Document $document, OllamaClient $ollama, IdMetadataExtractor $extractor): JsonResponse
+    public function ai(AskDocumentAiRequest $request, Document $document, OllamaClient $ollama, IdMetadataExtractor $extractor, DocumentContextText $contextText): JsonResponse
     {
-        $result = $document->ocrResult;
+        $ocrText = trim((string) ($document->ocrResult?->parsed_text ?? ''));
+        $formText = trim((string) ($request->validated('form_text') ?? ''));
+        $pageText = trim((string) ($request->validated('page_text') ?? ''));
+        $documentText = $contextText->forAi($ocrText, $formText, $pageText);
 
-        abort_unless($result !== null && filled($result->parsed_text), 422, 'OCR text is not available yet.');
+        abort_unless($documentText !== '', 422, 'PDF text, OCR text, or form fields are not available yet.');
 
-        $ocrText = (string) $result->parsed_text;
         $model = $request->validated('model');
 
         $context = $ollama->documentContext(
             $document->title,
-            $ocrText,
+            $documentText,
             $model,
         );
 
         $idMetadata = null;
 
         if ($document->doc_type->usesIdMetadata()) {
-            $idMetadata = $extractor->extractAndSave($document, $ocrText, $model)->toApiArray();
+            $idMetadata = $extractor->extractAndSave($document, $documentText, $model)->toApiArray();
         }
 
         return response()->json([
             'context' => $context,
             'id_metadata' => $idMetadata,
         ]);
+    }
+
+    public function destroy(Document $document): Response
+    {
+        $document->delete();
+
+        return response()->noContent();
+    }
+
+    public function updateFile(UpdateDocumentFileRequest $request, Document $document): JsonResponse
+    {
+        $disk = Storage::disk('documents');
+
+        abort_unless($disk->exists($document->filepath), 404);
+
+        $file = $request->file('file');
+        $disk->put($document->filepath, $file->get());
+
+        $document->update([
+            'mime_type' => $file->getClientMimeType() ?: $document->mime_type,
+            'file_size' => $disk->size($document->filepath),
+        ]);
+
+        $document->load(['ocrResult', 'idMetadata']);
+
+        return response()->json($document->toApiArray());
     }
 
     public function updateIdMetadata(UpdateIdMetadataRequest $request, Document $document): JsonResponse

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { InfoIcon, SparklesIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import DocumentInfoDialog from './DocumentInfoDialog';
 import PdfPreview from './PdfPreview';
-import { loadDocumentContext } from '@/lib/documents';
+import { loadDocumentContext, saveDocumentFile } from '@/lib/documents';
 import { getSettings } from '@/lib/settings';
 
 const AI_MODEL_STORAGE_KEY = 'ai.model';
@@ -49,6 +49,10 @@ export default function DocumentViewer({ document: file, onClose, onDocumentChan
     const [contextError, setContextError] = useState(null);
     const [models, setModels] = useState([]);
     const [model, setModel] = useState('');
+    const [pdfForm, setPdfForm] = useState({ fillable: false, dirty: false });
+    const [savingPdf, setSavingPdf] = useState(false);
+    const [pdfSaveError, setPdfSaveError] = useState(null);
+    const pdfPreviewRef = useRef(null);
 
     useEffect(() => {
         if (file) {
@@ -93,7 +97,10 @@ export default function DocumentViewer({ document: file, onClose, onDocumentChan
         setContextError(null);
         setLoadingContext(false);
         setInfoOpen(false);
-    }, [current?.id]);
+        setPdfForm({ fillable: false, dirty: false });
+        setSavingPdf(false);
+        setPdfSaveError(null);
+    }, [current?.id, current?.file_size]);
 
     useEffect(() => {
         if (!current || kind !== 'text') {
@@ -149,7 +156,9 @@ export default function DocumentViewer({ document: file, onClose, onDocumentChan
     }
 
     async function handleAiContext() {
-        if (!current?.ai_url || loadingContext || model === '') {
+        const canAskAi = Boolean(current?.ai_url) && (current.ocr_url != null || pdfForm.fillable);
+
+        if (!current || !canAskAi || loadingContext || model === '') {
             return;
         }
 
@@ -161,7 +170,7 @@ export default function DocumentViewer({ document: file, onClose, onDocumentChan
 
         setContextOpen(true);
 
-        if (context !== '') {
+        if (context !== '' && !pdfForm.fillable) {
             return;
         }
 
@@ -169,7 +178,15 @@ export default function DocumentViewer({ document: file, onClose, onDocumentChan
         setLoadingContext(true);
 
         try {
-            const payload = await loadDocumentContext(current.ai_url, model);
+            let formText = '';
+            let pageText = '';
+
+            if (kind === 'pdf' && pdfPreviewRef.current) {
+                formText = pdfPreviewRef.current.formText?.() ?? '';
+                pageText = (await pdfPreviewRef.current.pageText?.()) ?? '';
+            }
+
+            const payload = await loadDocumentContext(current.ai_url, model, formText, pageText);
             setContext(payload.context);
 
             if (payload.id_metadata) {
@@ -182,6 +199,28 @@ export default function DocumentViewer({ document: file, onClose, onDocumentChan
             setContextError(caught instanceof Error ? caught.message : 'Could not load document context.');
         } finally {
             setLoadingContext(false);
+        }
+    }
+
+    async function handleSaveFilledPdf() {
+        if (!current || savingPdf || !pdfForm.dirty) {
+            return;
+        }
+
+        setSavingPdf(true);
+        setPdfSaveError(null);
+
+        try {
+            const data = await pdfPreviewRef.current.saveFilled();
+            const blob = new Blob([data], { type: 'application/pdf' });
+            const updated = await saveDocumentFile(current.id, blob, current.name ?? 'document.pdf');
+
+            onDocumentChange?.(updated);
+            setPdfForm({ fillable: true, dirty: false });
+        } catch (caught) {
+            setPdfSaveError(caught instanceof Error ? caught.message : 'Could not save the filled PDF.');
+        } finally {
+            setSavingPdf(false);
         }
     }
 
@@ -206,13 +245,19 @@ export default function DocumentViewer({ document: file, onClose, onDocumentChan
                     <DialogDescription className="sr-only">Preview of the selected document.</DialogDescription>
                 </DialogHeader>
                 {current ? (
-                    <div className="min-h-0 overflow-hidden rounded-lg border bg-muted/30">
-                        {kind === 'pdf' ? <PdfPreview url={current.url} /> : null}
+                    <div className="flex min-h-0 justify-center overflow-hidden rounded-lg border bg-muted/30">
+                        {kind === 'pdf' ? (
+                            <PdfPreview
+                                ref={pdfPreviewRef}
+                                url={`${current.url}?t=${current.file_size}`}
+                                onFormStateChange={setPdfForm}
+                            />
+                        ) : null}
                         {kind === 'image' ? (
                             <img
                                 src={current.url}
                                 alt={current.name}
-                                className="mx-auto max-h-[min(70vh,40rem)] w-full object-contain"
+                                className="mx-auto max-h-[min(70vh,40rem)] max-w-full object-contain"
                             />
                         ) : null}
                         {kind === 'text' ? (
@@ -260,17 +305,33 @@ export default function DocumentViewer({ document: file, onClose, onDocumentChan
                                 </select>
                                 <Button
                                     variant={contextOpen ? 'default' : 'outline'}
-                                    disabled={!current.ai_url || loadingContext || model === ''}
-                                    title={current.ai_url ? 'Show this document’s context' : 'OCR text is not available yet'}
+                                    disabled={loadingContext || model === '' || (current.ocr_url == null && !pdfForm.fillable)}
+                                    title={
+                                        current.ocr_url != null || pdfForm.fillable
+                                            ? 'Show this document’s context'
+                                            : 'OCR text or form fields are not available yet'
+                                    }
                                     onClick={handleAiContext}
                                 >
                                     <SparklesIcon />
                                     AI context
                                 </Button>
                             </div>
-                            <Button variant="outline" nativeButton={false} render={<a href={current.download_url} />}>
-                                Download
-                            </Button>
+                            <div className="flex items-center gap-2">
+                                {pdfSaveError ? <p className="text-destructive max-w-40 truncate text-xs">{pdfSaveError}</p> : null}
+                                {kind === 'pdf' && pdfForm.fillable ? (
+                                    <Button
+                                        disabled={!pdfForm.dirty || savingPdf}
+                                        title={pdfForm.dirty ? 'Save filled form fields' : 'Fill a field to save'}
+                                        onClick={handleSaveFilledPdf}
+                                    >
+                                        {savingPdf ? 'Saving…' : 'Save fields'}
+                                    </Button>
+                                ) : null}
+                                <Button variant="outline" nativeButton={false} render={<a href={`${current.download_url}?t=${current.file_size}`} />}>
+                                    Download
+                                </Button>
+                            </div>
                         </>
                     ) : null}
                 </DialogFooter>

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Contracts\PdfCompressor;
+use App\Enums\DocType;
 use App\Models\Document;
 use App\PdfCompression\PdfCompressionSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -53,12 +54,13 @@ class DocumentTest extends TestCase
             ->assertJsonPath('0.url', route('documents.show', $document))
             ->assertJsonPath('0.download_url', route('documents.download', $document))
             ->assertJsonPath('0.ocr_url', null)
-            ->assertJsonPath('0.ai_url', null);
+            ->assertJsonPath('0.ai_url', route('documents.ai', $document));
     }
 
     public function test_documents_are_stored_on_the_documents_disk(): void
     {
         Storage::fake('documents');
+        $this->fakeOcrSpace();
 
         $file = UploadedFile::fake()->create('report.pdf', 120, 'application/pdf');
 
@@ -134,6 +136,7 @@ class DocumentTest extends TestCase
     public function test_original_quality_stores_pdfs_without_compressing(): void
     {
         Storage::fake('documents');
+        $this->fakeOcrSpace();
         app(PdfCompressionSettings::class)->setQuality('original');
 
         $this->app->instance(PdfCompressor::class, new class implements PdfCompressor
@@ -201,6 +204,7 @@ class DocumentTest extends TestCase
     public function test_uploads_default_to_the_unknown_doc_type(): void
     {
         Storage::fake('documents');
+        $this->fakeOcrSpace();
 
         $this->post(route('documents.store'), [
             'file' => UploadedFile::fake()->create('report.pdf', 120, 'application/pdf'),
@@ -221,6 +225,7 @@ class DocumentTest extends TestCase
     public function test_id_uploads_are_marked_for_id_metadata(): void
     {
         Storage::fake('documents');
+        $this->fakeOcrSpace();
 
         $this->post(route('documents.store'), [
             'file' => UploadedFile::fake()->create('national-id.pdf', 120, 'application/pdf'),
@@ -249,5 +254,80 @@ class DocumentTest extends TestCase
             'doc_type' => 'invoice',
         ])->assertUnprocessable()
             ->assertJsonValidationErrors('doc_type');
+    }
+
+    public function test_a_document_can_be_deleted_with_its_file_and_related_data(): void
+    {
+        Storage::fake('documents');
+        Storage::disk('documents')->put('national-id.pdf', '%PDF-bytes');
+        Storage::disk('documents')->put('keep.pdf', '%PDF-keep');
+
+        $document = Document::query()->create($this->documentAttributes([
+            'title' => 'national-id.pdf',
+            'doc_type' => DocType::Id,
+            'filepath' => 'national-id.pdf',
+            'file_size' => 11,
+        ]));
+        $kept = Document::query()->create($this->documentAttributes([
+            'title' => 'keep.pdf',
+            'filepath' => 'keep.pdf',
+            'file_size' => 9,
+        ]));
+
+        $ocr = $document->ocrResult()->create([
+            'payload' => ['OCRExitCode' => 1],
+            'parsed_text' => 'Republic of the Philippines National ID',
+        ]);
+        $metadata = $document->idMetadata()->create([
+            'first_name' => 'Juan',
+            'id_number' => '1234-5678-9012',
+        ]);
+
+        $this->deleteJson(route('documents.destroy', $document))
+            ->assertNoContent();
+
+        $this->assertDatabaseMissing('documents', ['id' => $document->id]);
+        $this->assertDatabaseMissing('ocr_results', ['id' => $ocr->id]);
+        $this->assertDatabaseMissing('id_metadata', ['id' => $metadata->id]);
+        $this->assertDatabaseHas('documents', ['id' => $kept->id]);
+        Storage::disk('documents')->assertMissing('national-id.pdf');
+        Storage::disk('documents')->assertExists('keep.pdf');
+    }
+
+    public function test_deleting_a_document_still_works_when_the_file_is_already_gone(): void
+    {
+        Storage::fake('documents');
+
+        $document = Document::query()->create($this->documentAttributes());
+
+        $this->deleteJson(route('documents.destroy', $document))
+            ->assertNoContent();
+
+        $this->assertDatabaseMissing('documents', ['id' => $document->id]);
+    }
+
+    public function test_the_stored_pdf_file_can_be_replaced(): void
+    {
+        Storage::fake('documents');
+        Storage::disk('documents')->put('report.pdf', '%PDF-old');
+
+        $document = Document::query()->create($this->documentAttributes([
+            'file_size' => 8,
+        ]));
+
+        $this->post(route('documents.file.update', $document), [
+            'file' => UploadedFile::fake()->create('filled.pdf', 24, 'application/pdf'),
+        ], [
+            'Accept' => 'application/json',
+        ])
+            ->assertOk()
+            ->assertJsonPath('id', $document->id)
+            ->assertJsonPath('title', 'report.pdf');
+
+        $document->refresh();
+
+        $this->assertSame('report.pdf', $document->filepath);
+        $this->assertSame($document->file_size, Storage::disk('documents')->size('report.pdf'));
+        $this->assertNotSame('%PDF-old', Storage::disk('documents')->get('report.pdf'));
     }
 }

@@ -27,10 +27,10 @@ class IdMetadataExtractor
 
     public function __construct(private OllamaClient $ollama) {}
 
-    public function extractAndSave(Document $document, string $ocrText, string $model): IdMetadata
+    public function extractAndSave(Document $document, string $documentText, string $model): IdMetadata
     {
         $metadata = $document->idMetadata()->updateOrCreate([], $this->normalize(
-            $this->ollama->extractIdMetadata($document->title, $ocrText, $model),
+            $this->ollama->extractIdMetadata($document->title, $documentText, $model),
         ));
 
         $document->setRelation('idMetadata', $metadata);

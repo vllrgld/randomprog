@@ -113,12 +113,20 @@ class StoredPdfCompressor
 
     private function shouldCompress(string $mimeType, string $originalName, string $absolutePath): bool
     {
-        if (! $this->settings->shouldCompress()) {
+        if (! $this->settings->shouldCompress() || $this->hasFormFields($absolutePath)) {
             return false;
         }
 
         return $this->compressor->supports($mimeType, $originalName)
             || $this->fileStartsWithPdf($absolutePath);
+    }
+
+    private function hasFormFields(string $absolutePath): bool
+    {
+        $contents = @file_get_contents($absolutePath);
+
+        return is_string($contents)
+            && (str_contains($contents, '/AcroForm') || str_contains($contents, '/XFA'));
     }
 
     private function fileStartsWithPdf(string $absolutePath): bool

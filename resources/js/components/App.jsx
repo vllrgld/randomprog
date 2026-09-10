@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Search, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogClose,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import AppSidebar from './AppSidebar';
@@ -9,7 +18,7 @@ import DocumentViewer from './DocumentViewer';
 import LoginPage from '@/pages/login';
 import Settings from './Settings';
 import ThemeToggle from './ThemeToggle';
-import { listDocuments, formatFileSize } from '@/lib/documents';
+import { deleteDocument, listDocuments, formatFileSize } from '@/lib/documents';
 import { docTypeLabel } from '@/lib/doc-types';
 
 function SidebarReopenTrigger() {
@@ -39,6 +48,9 @@ function Dashboard({ onLogout }) {
     const [preview, setPreview] = useState(null);
     const [searchInput, setSearchInput] = useState('');
     const [search, setSearch] = useState('');
+    const [pendingDelete, setPendingDelete] = useState(null);
+    const [deleting, setDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState(null);
 
     useEffect(() => {
         const timeout = setTimeout(() => setSearch(searchInput.trim()), 300);
@@ -72,6 +84,26 @@ function Dashboard({ onLogout }) {
             cancelled = true;
         };
     }, [page, search]);
+
+    async function confirmDelete() {
+        if (!pendingDelete || deleting) {
+            return;
+        }
+
+        setDeleting(true);n
+        setDeleteError(null);
+
+        try {
+            await deleteDocument(pendingDelete.id);
+            setAttachments((current) => current.filter((attachment) => attachment.id !== pendingDelete.id));
+            setPreview((current) => (current?.id === pendingDelete.id ? null : current));
+            setPendingDelete(null);
+        } catch (caught) {
+            setDeleteError(caught instanceof Error ? caught.message : 'Could not delete the document.');
+        } finally {
+            setDeleting(false);
+        }
+    }
 
     return (
         <SidebarProvider>
@@ -137,14 +169,29 @@ function Dashboard({ onLogout }) {
                                                 <p className="text-muted-foreground line-clamp-2 text-xs">{attachment.ocr_snippet}</p>
                                             ) : null}
                                         </div>
-                                        <span className="text-muted-foreground shrink-0 pt-1 text-xs">
-                                            {docTypeLabel(attachment.doc_type)}
-                                            {' · '}
-                                            {formatFileSize(attachment.size)}
-                                            {attachment.compressed && attachment.original_size
-                                                ? ` (was ${formatFileSize(attachment.original_size)})`
-                                                : ''}
-                                        </span>
+                                        <div className="flex shrink-0 items-center gap-1 pt-0.5">
+                                            <span className="text-muted-foreground text-xs">
+                                                {docTypeLabel(attachment.doc_type)}
+                                                {' · '}
+                                                {formatFileSize(attachment.size)}
+                                                {attachment.compressed && attachment.original_size
+                                                    ? ` (was ${formatFileSize(attachment.original_size)})`
+                                                    : ''}
+                                            </span>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon-sm"
+                                                title="Delete"
+                                                aria-label={`Delete ${attachment.name}`}
+                                                className="text-muted-foreground hover:text-destructive"
+                                                onClick={() => {
+                                                    setDeleteError(null);
+                                                    setPendingDelete(attachment);
+                                                }}
+                                            >
+                                                <Trash2 />
+                                            </Button>
+                                        </div>
                                     </li>
                                 ))}
                             </ul>
@@ -163,6 +210,36 @@ function Dashboard({ onLogout }) {
                             }}
                         />
                     ) : null}
+                    <Dialog
+                        open={pendingDelete != null}
+                        onOpenChange={(open) => {
+                            if (deleting) {
+                                return;
+                            }
+
+                            if (!open) {
+                                setPendingDelete(null);
+                                setDeleteError(null);
+                            }
+                        }}
+                    >
+                        <DialogContent showCloseButton={!deleting} className="sm:max-w-md">
+                            <DialogHeader>
+                                <DialogTitle>Delete document</DialogTitle>
+                                <DialogDescription>
+                                    This removes the file, OCR text, and related info for{' '}
+                                    {pendingDelete?.name ?? 'this document'}.
+                                </DialogDescription>
+                            </DialogHeader>
+                            {deleteError ? <p className="text-destructive text-xs">{deleteError}</p> : null}
+                            <DialogFooter>
+                                <DialogClose render={<Button variant="outline" disabled={deleting} />}>Cancel</DialogClose>
+                                <Button variant="destructive" disabled={deleting} onClick={confirmDelete}>
+                                    {deleting ? 'Deleting…' : 'Delete'}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                 </div>
 
                 <footer className="mt-auto flex items-center justify-between gap-3 border-t px-4 py-3 text-sm text-muted-foreground">

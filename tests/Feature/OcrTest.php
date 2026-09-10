@@ -63,7 +63,7 @@ class OcrTest extends TestCase
             ->assertJsonPath('ParsedResults.0.ParsedText', 'Recognized text');
     }
 
-    public function test_ocr_is_skipped_when_compression_does_not_run(): void
+    public function test_ocr_still_runs_when_compression_does_not_run(): void
     {
         Storage::fake('documents');
         $this->fakeOcrSpace();
@@ -89,13 +89,10 @@ class OcrTest extends TestCase
         ])
             ->assertCreated()
             ->assertJsonPath('compressed', false)
-            ->assertJsonPath('ocr_url', null);
+            ->assertJsonPath('ocr_url', route('documents.ocr', Document::query()->first()));
 
-        Http::assertNothingSent();
-        $this->assertDatabaseCount('ocr_results', 0);
-
-        $this->get(route('documents.ocr', Document::query()->first()))
-            ->assertNotFound();
+        Http::assertSent(fn ($request): bool => str_contains($request->url(), 'ocr.space'));
+        $this->assertDatabaseCount('ocr_results', 1);
     }
 
     private function compressorThatRecordsHttp(mixed &$httpDuringCompress): PdfCompressor

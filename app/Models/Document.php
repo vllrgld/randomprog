@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\Storage;
 
 #[Fillable(['title', 'doc_type', 'mime_type', 'filepath', 'file_size'])]
 class Document extends Model
@@ -36,6 +37,17 @@ class Document extends Model
             'doc_type' => DocType::class,
             'file_size' => 'integer',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::deleting(function (Document $document): void {
+            $disk = Storage::disk('documents');
+
+            if (filled($document->filepath) && $disk->exists($document->filepath)) {
+                $disk->delete($document->filepath);
+            }
+        });
     }
 
     /**
@@ -76,9 +88,7 @@ class Document extends Model
             'ocr_url' => $this->ocrResult !== null
                 ? route('documents.ocr', $this)
                 : null,
-            'ai_url' => $this->ocrResult !== null
-                ? route('documents.ai', $this)
-                : null,
+            'ai_url' => route('documents.ai', $this),
             'ocr_snippet' => $search !== ''
                 ? $this->ocrResult?->snippet($search)
                 : null,

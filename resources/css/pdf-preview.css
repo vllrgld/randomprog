@@ -1,0 +1,29 @@
+@import "pdfjs-dist/web/pdf_viewer.css";
+
+/*
+ * Tailwind Preflight sets `box-sizing: border-box` on every element. pdf.js
+ * sizes `.page` to the viewport and then draws the canvas at 100% of that
+ * box, while the annotation layer (form highlights) uses the same viewport
+ * width. A border-box page with pdf.js's 9px `--page-border` shrinks the
+ * canvas but not the overlay, so the blue field boxes miss the form.
+ */
+.pdfViewer {
+    --page-border: none;
+}
+
+.pdfViewer .page {
+    box-sizing: content-box;
+    margin-inline: auto !important;
+    border: none;
+    background-clip: border-box;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+.pdfViewer .canvasWrapper,
+.pdfViewer .canvasWrapper canvas {
+    box-sizing: content-box;
+    max-width: none;
+    border: 0;
+    padding: 0;
+    margin: 0;
+}

@@ -31,12 +31,4 @@ class AppServiceProvider extends ServiceProvider
 
         $this->app->singleton(OcrClient::class, OcrSpaceClient::class);
     }
-
-    /**
-     * Bootstrap any application services.
-     */
-    public function boot(): void
-    {
-        //
-    }
 }

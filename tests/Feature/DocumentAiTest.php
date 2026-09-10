@@ -73,6 +73,138 @@ class DocumentAiTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_ai_uses_fillable_form_fields_without_ocr_text(): void
+    {
+        Http::fake([
+            'https://ollama.com/api/chat' => Http::response([
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => 'This is a filled employment application for Juan Dela Cruz.',
+                ],
+            ]),
+        ]);
+
+        $document = Document::query()->create($this->documentAttributes([
+            'title' => 'application.pdf',
+            'filepath' => 'application.pdf',
+        ]));
+
+        $this->postJson(route('documents.ai', $document), [
+            'model' => 'gpt-oss:20b',
+            'form_text' => "Full Name: Juan Dela Cruz\nPosition: Clerk",
+        ])
+            ->assertOk()
+            ->assertJsonPath('context', 'This is a filled employment application for Juan Dela Cruz.');
+
+        Http::assertSent(function ($request): bool {
+            $content = (string) ($request->data()['messages'][0]['content'] ?? '');
+
+            return str_contains($content, 'Form fields:')
+                && str_contains($content, 'Full Name: Juan Dela Cruz')
+                && str_contains($content, 'Position: Clerk')
+                && ! str_contains($content, 'OCR text:');
+        });
+    }
+
+    public function test_ai_includes_form_fields_with_ocr_text(): void
+    {
+        Http::fake([
+            'https://ollama.com/api/chat' => Http::response([
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => 'This invoice is billed to Juan Dela Cruz.',
+                ],
+            ]),
+        ]);
+
+        $document = $this->documentWithOcr();
+
+        $this->postJson(route('documents.ai', $document), [
+            'model' => 'gpt-oss:20b',
+            'form_text' => 'Customer: Juan Dela Cruz',
+        ])->assertOk();
+
+        Http::assertSent(function ($request): bool {
+            $content = (string) ($request->data()['messages'][0]['content'] ?? '');
+
+            return str_contains($content, 'Invoice total: 40 pesos.')
+                && str_contains($content, 'Form fields:')
+                && str_contains($content, 'Customer: Juan Dela Cruz');
+        });
+    }
+
+    public function test_ai_uses_pdf_page_text_for_fillable_documents_without_ocr(): void
+    {
+        Http::fake([
+            'https://ollama.com/api/chat' => Http::response([
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => 'This is a Philippine identification card for Juan Dela Cruz.',
+                ],
+            ]),
+        ]);
+
+        $document = Document::query()->create($this->documentAttributes([
+            'title' => 'national-id.pdf',
+            'filepath' => 'national-id.pdf',
+        ]));
+
+        $this->postJson(route('documents.ai', $document), [
+            'model' => 'gpt-oss:20b',
+            'form_text' => 'LastName: Dela Cruz',
+            'page_text' => "Republic of the Philippines\nPhilippine Identification Card\nLast Name DELA CRUZ\nGiven Name JUAN",
+        ])
+            ->assertOk()
+            ->assertJsonPath('context', 'This is a Philippine identification card for Juan Dela Cruz.');
+
+        Http::assertSent(function ($request): bool {
+            $content = (string) ($request->data()['messages'][0]['content'] ?? '');
+
+            return str_contains($content, 'PDF text:')
+                && str_contains($content, 'Philippine Identification Card')
+                && str_contains($content, 'Given Name JUAN')
+                && str_contains($content, 'LastName: Dela Cruz');
+        });
+    }
+
+    public function test_ai_keeps_ocr_and_omits_checklist_form_fields(): void
+    {
+        Http::fake([
+            'https://ollama.com/api/chat' => Http::response([
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => 'This is a patient intake for Juan Dela Cruz.',
+                ],
+            ]),
+        ]);
+
+        $document = Document::query()->create($this->documentAttributes([
+            'title' => 'intake.pdf',
+            'filepath' => 'intake.pdf',
+        ]));
+
+        OcrResult::query()->create([
+            'document_id' => $document->id,
+            'payload' => ['OCRExitCode' => 1],
+            'parsed_text' => "Patient intake.\n| Symptom | Yes | No |\n[ ] Fever  [x] Cough",
+        ]);
+
+        $this->postJson(route('documents.ai', $document), [
+            'model' => 'gpt-oss:20b',
+            'form_text' => "Full Name: Juan Dela Cruz\nCheck Box 12: Yes",
+        ])->assertOk();
+
+        Http::assertSent(function ($request): bool {
+            $content = (string) ($request->data()['messages'][0]['content'] ?? '');
+
+            return str_contains($content, 'Patient intake.')
+                && str_contains($content, '| Symptom | Yes | No |')
+                && str_contains($content, '[ ] Fever  [x] Cough')
+                && str_contains($content, 'Full Name: Juan Dela Cruz')
+                && ! str_contains($content, 'Check Box 12');
+        });
+    }
+
     public function test_ai_extracts_and_saves_id_metadata_for_id_documents(): void
     {
         Http::fake(function ($request) {

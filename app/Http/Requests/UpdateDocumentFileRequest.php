@@ -4,9 +4,8 @@ namespace App\Http\Requests;
 
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
-class AskDocumentAiRequest extends FormRequest
+class UpdateDocumentFileRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -24,9 +23,7 @@ class AskDocumentAiRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'model' => ['required', 'string', Rule::in(config('services.ollama.models', []))],
-            'form_text' => ['nullable', 'string', 'max:100000'],
-            'page_text' => ['nullable', 'string', 'max:200000'],
+            'file' => ['required', 'file', 'mimes:pdf', 'max:10240'],
         ];
     }
 }

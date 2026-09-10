@@ -8,11 +8,11 @@ use RuntimeException;
 
 class OllamaClient
 {
-    public function documentContext(string $documentName, string $ocrText, string $model): string
+    public function documentContext(string $documentName, string $documentText, string $model): string
     {
         return $this->chat(
             $documentName,
-            $ocrText,
+            $documentText,
             'What is the context of this document? Explain what it is about and the key details in a short paragraph.',
             $model,
         );
@@ -21,23 +21,23 @@ class OllamaClient
     /**
      * @return array<string, mixed>
      */
-    public function extractIdMetadata(string $documentName, string $ocrText, string $model): array
+    public function extractIdMetadata(string $documentName, string $documentText, string $model): array
     {
         $content = $this->chat(
             $documentName,
-            $ocrText,
-            'Extract the ID fields from the OCR text. Reply with JSON only.',
+            $documentText,
+            'Extract the ID fields from the document. Reply with JSON only.',
             $model,
-            $this->idExtractionPrompt($documentName, $ocrText),
+            $this->idExtractionPrompt($documentName, $documentText),
         );
 
         return $this->decodeJsonObject($content);
     }
 
     /**
-     * Ask an Ollama Cloud model about a document using OCR text as context.
+     * Ask an Ollama Cloud model about a document using OCR text and form fields as context.
      */
-    public function chat(string $documentName, string $ocrText, string $message, string $model, ?string $systemPrompt = null): string
+    private function chat(string $documentName, string $documentText, string $message, string $model, ?string $systemPrompt = null): string
     {
         $apiKey = config('services.ollama.key');
 
@@ -57,7 +57,7 @@ class OllamaClient
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => $systemPrompt ?? $this->systemPrompt($documentName, $ocrText),
+                        'content' => $systemPrompt ?? $this->systemPrompt($documentName, $documentText),
                     ],
                     [
                         'role' => 'user',
@@ -113,30 +113,28 @@ class OllamaClient
         return $decoded;
     }
 
-    private function systemPrompt(string $documentName, string $ocrText): string
+    private function systemPrompt(string $documentName, string $documentText): string
     {
         return <<<PROMPT
-You are helping the user understand a document. Use only the OCR text below as context. If the answer is not in the document, say so. Reply with a short paragraph.
+You are helping the user understand a document. Use the PDF text, OCR text, and form fields below as context. PDF text is the document body. If the answer is not in the document, say so. Reply with a short paragraph.
 
 Document name: {$documentName}
 
-OCR text:
-{$ocrText}
+{$documentText}
 PROMPT;
     }
 
-    private function idExtractionPrompt(string $documentName, string $ocrText): string
+    private function idExtractionPrompt(string $documentName, string $documentText): string
     {
         return <<<PROMPT
-You extract identity fields from an ID document. Use only the OCR text. Reply with a JSON object and no markdown. Use null when a field is missing.
+You extract identity fields from an ID document. Use the PDF text, OCR text, and form fields. Reply with a JSON object and no markdown. Use null when a field is missing.
 
 Keys: first_name, middle_name, last_name, suffix, id_number, sex, civil_status, blood_type, birthday, place_of_birth, address, issued_on.
 birthday and issued_on must be YYYY-MM-DD or null.
 
 Document name: {$documentName}
 
-OCR text:
-{$ocrText}
+{$documentText}
 PROMPT;
     }
 }

@@ -69,7 +69,49 @@ export async function uploadDocument(file, docType = 'unknown') {
     return payload;
 }
 
-export async function loadDocumentContext(url, model) {
+export async function saveDocumentFile(documentId, blob, filename) {
+    const body = new FormData();
+    body.append('file', blob, filename);
+
+    const response = await fetch(`/documents/${documentId}/file`, {
+        method: 'POST',
+        headers: {
+            Accept: 'application/json',
+            'X-CSRF-TOKEN': csrfToken(),
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'same-origin',
+        body,
+    });
+
+    const payload = await response.json().catch(() => null);
+
+    if (!response.ok) {
+        throw new Error(payload?.message ?? 'Could not save the document.');
+    }
+
+    return payload;
+}
+
+export async function deleteDocument(documentId) {
+    const response = await fetch(`/documents/${documentId}`, {
+        method: 'DELETE',
+        headers: {
+            Accept: 'application/json',
+            'X-CSRF-TOKEN': csrfToken(),
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'same-origin',
+    });
+
+    if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+
+        throw new Error(payload?.message ?? 'Could not delete the document.');
+    }
+}
+
+export async function loadDocumentContext(url, model, formText = '', pageText = '') {
     const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -79,7 +121,11 @@ export async function loadDocumentContext(url, model) {
             'X-Requested-With': 'XMLHttpRequest',
         },
         credentials: 'same-origin',
-        body: JSON.stringify({ model }),
+        body: JSON.stringify({
+            model,
+            form_text: formText,
+            page_text: pageText,
+        }),
     });
 
     const payload = await response.json().catch(() => null);
