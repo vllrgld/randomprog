@@ -1,4 +1,5 @@
-import { Box, ChevronsUpDown, CircleUser, CreditCard, FileText, Home, LogOut, Settings, UserRound } from 'lucide-react';
+import { ChevronsUpDown, CircleUser, CreditCard, FileText, Home, LogOut, Settings, UserRound } from 'lucide-react';
+import PlaygroundIcon from './PlaygroundIcon';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -29,7 +30,7 @@ const items = [
 
 ];
 
-export default function AppSidebar({ activePage, onNavigate }) {
+export default function AppSidebar({ activePage, onNavigate, onLogout }) {
     return (
         <Sidebar>
             <SidebarHeader>
@@ -38,7 +39,7 @@ export default function AppSidebar({ activePage, onNavigate }) {
                         <div className="flex items-center gap-1">
                             <SidebarMenuButton size="lg" className="flex-1">
                                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                                    <Box className="size-4" />
+                                    <PlaygroundIcon className="size-4" />
                                 </div>
                                 <div className="grid flex-1 text-left text-sm leading-tight">
                                     <span className="truncate font-semibold">Docs Playground</span>
@@ -122,7 +123,7 @@ export default function AppSidebar({ activePage, onNavigate }) {
                                     </DropdownMenuItem>
                                 </DropdownMenuGroup>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem>
+                                <DropdownMenuItem onClick={onLogout}>
                                     <LogOut />
                                     Log out
                                 </DropdownMenuItem>

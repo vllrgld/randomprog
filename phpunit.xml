@@ -18,6 +18,7 @@
         </include>
     </source>
     <php>
+        <env name="APP_NAME" value="Docs Playground"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
@@ -33,5 +34,11 @@
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
         <env name="PDF_COMPRESSION_DRIVER" value="none"/>
+        <env name="OCR_SPACE_API_KEY" value="test-ocr-key"/>
+        <env name="OCR_SPACE_URL" value="https://api.ocr.space/parse/image"/>
+        <env name="OLLAMA_API_KEY" value="test-ollama-key"/>
+        <env name="OLLAMA_URL" value="https://ollama.com/api/chat"/>
+        <env name="OLLAMA_MODEL" value="gemma4:31b"/>
+        <env name="OLLAMA_MODELS" value="gemma4:31b,gpt-oss:120b,gpt-oss:20b,nemotron-3-nano:30b,nemotron-3-super,nemotron-3-ultra"/>
     </php>
 </phpunit>

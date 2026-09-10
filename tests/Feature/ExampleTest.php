@@ -16,4 +16,11 @@ class ExampleTest extends TestCase
 
         $response->assertStatus(200);
     }
+
+    public function test_the_home_page_title_is_docs_playground(): void
+    {
+        $this->get('/')
+            ->assertOk()
+            ->assertSee('<title>Docs Playground</title>', false);
+    }
 }

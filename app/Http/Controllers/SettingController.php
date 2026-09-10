@@ -21,13 +21,15 @@ class SettingController extends Controller
     }
 
     /**
-     * @return array{pdf_quality: string, pdf_qualities: list<array{value: string, label: string, description: string}>}
+     * @return array{pdf_quality: string, pdf_qualities: list<array{value: string, label: string, description: string}>, ai_model: string, ai_models: list<string>}
      */
     private function payload(PdfCompressionSettings $settings): array
     {
         return [
             'pdf_quality' => $settings->quality(),
             'pdf_qualities' => $settings->options(),
+            'ai_model' => config('services.ollama.model'),
+            'ai_models' => config('services.ollama.models', []),
         ];
     }
 }

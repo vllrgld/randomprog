@@ -2,12 +2,11 @@
 
 namespace App\Http\Requests;
 
-use App\Enums\DocType;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class StoreDocumentRequest extends FormRequest
+class AskDocumentAiRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -25,8 +24,7 @@ class StoreDocumentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'file' => ['required', 'file', 'max:10240'],
-            'doc_type' => ['nullable', Rule::enum(DocType::class)],
+            'model' => ['required', 'string', Rule::in(config('services.ollama.models', []))],
         ];
     }
 }

@@ -18,7 +18,7 @@ class StoredPdfCompressor
     /**
      * Compress an uploaded file, then store the result on the documents disk.
      *
-     * @return array{path: string, size: int, compressed: bool, original_size: int, original_name: string, mime_type: string}
+     * @return array{path: string, size: int, compressed: bool, compression_ran: bool, original_size: int, original_name: string, mime_type: string}
      */
     public function storeUploaded(UploadedFile $file): array
     {
@@ -29,6 +29,7 @@ class StoredPdfCompressor
         $path = $file->hashName();
         $disk = Storage::disk('documents');
         $compressed = false;
+        $compressionRan = false;
 
         if ($this->shouldCompress($mimeType, $originalName, $absolutePath)) {
             try {
@@ -37,6 +38,7 @@ class StoredPdfCompressor
                 if ($result !== '') {
                     $disk->put($path, $result);
                     $compressed = strlen($result) < $originalSize;
+                    $compressionRan = true;
                 }
             } catch (Throwable $exception) {
                 Log::warning('PDF compression failed; storing the original file.', [
@@ -56,6 +58,7 @@ class StoredPdfCompressor
             'path' => $path,
             'size' => $disk->size($path),
             'compressed' => $compressed,
+            'compression_ran' => $compressionRan,
             'original_size' => $originalSize,
             'original_name' => $originalName,
             'mime_type' => $mimeType,

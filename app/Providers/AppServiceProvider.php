@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Contracts\OcrClient;
 use App\Contracts\PdfCompressor;
+use App\Ocr\OcrSpaceClient;
 use App\PdfCompression\GhostscriptPdfCompressor;
 use App\PdfCompression\NullPdfCompressor;
 use Illuminate\Support\ServiceProvider;
@@ -26,6 +28,8 @@ class AppServiceProvider extends ServiceProvider
                 default => throw new InvalidArgumentException("Unsupported PDF compression driver [{$driver}]."),
             };
         });
+
+        $this->app->singleton(OcrClient::class, OcrSpaceClient::class);
     }
 
     /**

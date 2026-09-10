@@ -4,8 +4,11 @@ import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from '@/com
 import AppSidebar from './AppSidebar';
 import DocumentsAttachment from './DocumentsAttachment';
 import DocumentViewer from './DocumentViewer';
+import LoginPage from '@/pages/login';
 import Settings from './Settings';
+import ThemeToggle from './ThemeToggle';
 import { listDocuments, formatFileSize } from '@/lib/documents';
+import { docTypeLabel } from '@/lib/doc-types';
 
 function SidebarReopenTrigger() {
     const { open, isMobile } = useSidebar();
@@ -18,6 +21,16 @@ function SidebarReopenTrigger() {
 }
 
 export default function App() {
+    const [authenticated, setAuthenticated] = useState(false);
+
+    if (!authenticated) {
+        return <LoginPage onLogin={() => setAuthenticated(true)} />;
+    }
+
+    return <Dashboard onLogout={() => setAuthenticated(false)} />;
+}
+
+function Dashboard({ onLogout }) {
     const [page, setPage] = useState('home');
     const [attachments, setAttachments] = useState([]);
     const [listError, setListError] = useState(null);
@@ -52,7 +65,7 @@ export default function App() {
 
     return (
         <SidebarProvider>
-            <AppSidebar activePage={page} onNavigate={setPage} />
+            <AppSidebar activePage={page} onNavigate={setPage} onLogout={onLogout} />
             <SidebarInset>
                 <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
                     <SidebarReopenTrigger />
@@ -62,9 +75,10 @@ export default function App() {
                     {page === 'documents' && (
                         <div className="ml-auto">
                             <DocumentsAttachment
-                                onAttach={(document) =>
-                                    setAttachments((current) => [document, ...current])
-                                }
+                                onAttach={(document) => {
+                                    setAttachments((current) => [document, ...current]);
+                                    setPreview(document);
+                                }}
                             />
                         </div>
                     )}
@@ -89,7 +103,9 @@ export default function App() {
                                         >
                                             <span className="truncate">{attachment.name}</span>
                                         </Button>
-                                        <span className="text-muted-foreground text-xs">
+                                        <span className="text-muted-foreground shrink-0 text-xs">
+                                            {docTypeLabel(attachment.doc_type)}
+                                            {' · '}
                                             {formatFileSize(attachment.size)}
                                             {attachment.compressed && attachment.original_size
                                                 ? ` (was ${formatFileSize(attachment.original_size)})`
@@ -99,11 +115,25 @@ export default function App() {
                                 ))}
                             </ul>
                         ))}
-                    {page === 'documents' ? <DocumentViewer document={preview} onClose={() => setPreview(null)} /> : null}
+                    {page === 'documents' ? (
+                        <DocumentViewer
+                            document={preview}
+                            onClose={() => setPreview(null)}
+                            onDocumentChange={(document) => {
+                                setPreview(document);
+                                setAttachments((current) =>
+                                    current.map((attachment) =>
+                                        attachment.id === document.id ? { ...attachment, ...document } : attachment,
+                                    ),
+                                );
+                            }}
+                        />
+                    ) : null}
                 </div>
 
-                <footer className="border-t px-4 py-3 text-sm text-muted-foreground">
-                    © 2026 Docs Playground
+                <footer className="mt-auto flex items-center justify-between gap-3 border-t px-4 py-3 text-sm text-muted-foreground">
+                    <span>© 2026 Docs Playground</span>
+                    <ThemeToggle />
                 </footer>
             </SidebarInset>
         </SidebarProvider>

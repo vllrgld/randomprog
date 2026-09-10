@@ -27,24 +27,24 @@ class CompressDocumentsCommand extends Command
         }
 
         foreach ($documents as $document) {
-            if (! Storage::disk('documents')->exists($document->path)) {
-                $this->warn("Missing file: {$document->original_name}");
+            if (! Storage::disk('documents')->exists($document->filepath)) {
+                $this->warn("Missing file: {$document->title}");
 
                 continue;
             }
 
-            $before = $document->size;
+            $before = $document->file_size;
             $result = $compressor->compress(
-                $document->path,
+                $document->filepath,
                 (string) $document->mime_type,
-                $document->original_name,
+                $document->title,
             );
 
-            $document->update(['size' => $result['size']]);
+            $document->update(['file_size' => $result['size']]);
 
             $this->line(sprintf(
                 '%s: %d -> %d bytes%s',
-                $document->original_name,
+                $document->title,
                 $before,
                 $result['size'],
                 $result['compressed'] ? ' (compressed)' : ' (unchanged)',

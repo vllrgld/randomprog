@@ -35,9 +35,10 @@ export async function listDocuments() {
     return response.json();
 }
 
-export async function uploadDocument(file) {
+export async function uploadDocument(file, docType = 'unknown') {
     const body = new FormData();
     body.append('file', file);
+    body.append('doc_type', docType);
 
     const response = await fetch('/documents', {
         method: 'POST',
@@ -54,6 +55,50 @@ export async function uploadDocument(file) {
 
     if (!response.ok) {
         throw new Error(payload?.message ?? 'Could not upload the document.');
+    }
+
+    return payload;
+}
+
+export async function loadDocumentContext(url, model) {
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': csrfToken(),
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({ model }),
+    });
+
+    const payload = await response.json().catch(() => null);
+
+    if (!response.ok) {
+        throw new Error(payload?.message ?? 'Could not load document context.');
+    }
+
+    return payload;
+}
+
+export async function updateIdMetadata(documentId, fields) {
+    const response = await fetch(`/documents/${documentId}/id-metadata`, {
+        method: 'PUT',
+        headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': csrfToken(),
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify(fields),
+    });
+
+    const payload = await response.json().catch(() => null);
+
+    if (!response.ok) {
+        throw new Error(payload?.message ?? 'Could not save ID info.');
     }
 
     return payload;

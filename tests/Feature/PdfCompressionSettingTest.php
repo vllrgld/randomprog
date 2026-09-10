@@ -20,7 +20,10 @@ class PdfCompressionSettingTest extends TestCase
         $this->getJson(route('settings.show'))
             ->assertOk()
             ->assertJsonPath('pdf_quality', 'ebook')
-            ->assertJsonCount(3, 'pdf_qualities');
+            ->assertJsonCount(3, 'pdf_qualities')
+            ->assertJsonPath('ai_model', 'gemma4:31b')
+            ->assertJsonPath('ai_models.0', 'gemma4:31b')
+            ->assertJsonCount(6, 'ai_models');
     }
 
     public function test_compression_quality_can_be_updated(): void
