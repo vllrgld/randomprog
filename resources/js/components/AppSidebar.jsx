@@ -1,5 +1,4 @@
-import { ChevronsUpDown, CircleUser, CreditCard, FileText, Home, LogOut, Settings, UserRound } from 'lucide-react';
-import PlaygroundIcon from './PlaygroundIcon';
+import { ChevronsUpDown, CircleUser, CreditCard, FileText, Home, Library, LogOut, Settings, UserRound } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -39,7 +38,7 @@ export default function AppSidebar({ activePage, onNavigate, onLogout }) {
                         <div className="flex items-center gap-1">
                             <SidebarMenuButton size="lg" className="flex-1">
                                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                                    <PlaygroundIcon className="size-4" />
+                                    <Library className="size-4" />
                                 </div>
                                 <div className="grid flex-1 text-left text-sm leading-tight">
                                     <span className="truncate font-semibold">Docs Playground</span>

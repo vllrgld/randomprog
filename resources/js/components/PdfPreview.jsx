@@ -1,7 +1,10 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { GalleryThumbnailsIcon } from 'lucide-react';
 import { AnnotationMode, getDocument, GlobalWorkerOptions, PixelsPerInch } from 'pdfjs-dist';
 import { EventBus, PDFLinkService, PDFPageView } from 'pdfjs-dist/web/pdf_viewer.mjs';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { Button } from '@/components/ui/button';
 import { stampSignaturesOnPdf } from '@/lib/pdfSignature';
 import '../../css/pdf-preview.css';
 
@@ -192,6 +195,104 @@ function scaleFromRenderedView(firstView, availableWidth, viewScale) {
     }
 
     return percent / 100;
+}
+
+const THUMB_WIDTH = 72;
+
+function thumbnailFromCanvas(source) {
+    if (!(source instanceof HTMLCanvasElement) || source.width < 2 || source.height < 2) {
+        return null;
+    }
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const width = Math.max(1, Math.round(THUMB_WIDTH * dpr));
+    const height = Math.max(1, Math.round((width * source.height) / source.width));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d', { alpha: false });
+
+    if (context == null) {
+        return null;
+    }
+
+    context.fillStyle = '#fff';
+    context.fillRect(0, 0, width, height);
+    context.drawImage(source, 0, 0, width, height);
+
+    try {
+        return canvas.toDataURL('image/jpeg', 0.8);
+    } catch {
+        return null;
+    }
+}
+
+async function renderPageThumbnail(page) {
+    const base = page.getViewport({ scale: 1 });
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const scale = (THUMB_WIDTH * dpr) / Math.max(base.width, 1);
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.ceil(viewport.width));
+    canvas.height = Math.max(1, Math.ceil(viewport.height));
+    const canvasContext = canvas.getContext('2d', { alpha: false });
+
+    if (canvasContext == null) {
+        return null;
+    }
+
+    await page.render({
+        canvas,
+        canvasContext,
+        viewport,
+        annotationMode: AnnotationMode.DISABLE,
+        background: '#fff',
+    }).promise;
+
+    return thumbnailFromCanvas(canvas) ?? canvas.toDataURL('image/jpeg', 0.8);
+}
+
+function pageCanvas(view, pagesNode, pageNumber) {
+    return view?.div?.querySelector?.('canvas')
+        ?? pagesNode?.querySelector?.(`.page[data-page-number="${pageNumber}"] canvas`)
+        ?? null;
+}
+
+const THUMB_OPEN_STORAGE_KEY = 'pdf.thumbnailsOpen';
+const THUMB_GUTTER_INSET = 12;
+const THUMB_MODAL_GAP = 12;
+
+function readThumbsOpen() {
+    const stored = localStorage.getItem(THUMB_OPEN_STORAGE_KEY);
+
+    if (stored === '0') {
+        return false;
+    }
+
+    if (stored === '1') {
+        return true;
+    }
+
+    return window.innerWidth >= 768;
+}
+
+function computeThumbsChromeBox(host) {
+    if (!(host instanceof HTMLElement)) {
+        return null;
+    }
+
+    const rect = host.getBoundingClientRect();
+
+    if (rect.width < 80 || rect.height < 80) {
+        return null;
+    }
+
+    return {
+        left: Math.round(THUMB_GUTTER_INSET - rect.left),
+        top: THUMB_GUTTER_INSET,
+        width: Math.max(56, Math.round(rect.left - THUMB_GUTTER_INSET - THUMB_MODAL_GAP)),
+        height: Math.max(160, Math.round(rect.height - THUMB_GUTTER_INSET * 2)),
+    };
 }
 
 function applyPageScale(pageViews, pagesNode, scale) {
@@ -398,10 +499,16 @@ export default forwardRef(function PdfPreview({ url, onFormStateChange, onSelect
     const pendingStampRef = useRef(null);
     const fillableRef = useRef(false);
     const viewScaleRef = useRef(viewScale);
+    const thumbsRef = useRef(null);
+    const [thumbsHost, setThumbsHost] = useState(null);
     const [placingSignature, setPlacingSignature] = useState(false);
     const [width, setWidth] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [thumbnails, setThumbnails] = useState([]);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [thumbsOpen, setThumbsOpen] = useState(readThumbsOpen);
+    const [thumbsBox, setThumbsBox] = useState(null);
     const readyUrl = url && width >= 80 ? url : '';
 
     onFormStateChangeRef.current = onFormStateChange;
@@ -515,6 +622,74 @@ export default forwardRef(function PdfPreview({ url, onFormStateChange, onSelect
         return () => observer.disconnect();
     }, []);
 
+    useLayoutEffect(() => {
+        const host = frameRef.current?.closest('[data-slot="dialog-content"]') ?? null;
+
+        setThumbsHost((current) => (current === host ? current : host));
+        setThumbsBox(computeThumbsChromeBox(host));
+    }, [url, width]);
+
+    useEffect(() => {
+        if (!(thumbsHost instanceof HTMLElement)) {
+            return;
+        }
+
+        let raf = 0;
+        let frames = 0;
+        let stable = 0;
+        let lastLeft = null;
+
+        const updateChrome = () => {
+            const next = computeThumbsChromeBox(thumbsHost);
+
+            if (next) {
+                setThumbsBox(next);
+            }
+
+            const left = thumbsHost.getBoundingClientRect().left;
+
+            if (lastLeft != null && Math.abs(left - lastLeft) < 0.5) {
+                stable += 1;
+            } else {
+                stable = 0;
+            }
+
+            lastLeft = left;
+            frames += 1;
+
+            if (stable < 2 && frames < 30) {
+                raf = requestAnimationFrame(updateChrome);
+            }
+        };
+
+        raf = requestAnimationFrame(updateChrome);
+
+        const restart = () => {
+            frames = 0;
+            stable = 0;
+            lastLeft = null;
+            cancelAnimationFrame(raf);
+            raf = requestAnimationFrame(updateChrome);
+        };
+
+        const timeout = window.setTimeout(restart, 120);
+        window.addEventListener('resize', restart);
+        thumbsHost.addEventListener('animationend', restart);
+        thumbsHost.addEventListener('transitionend', restart);
+
+        const observer = new ResizeObserver(restart);
+        observer.observe(thumbsHost);
+
+        return () => {
+            cancelAnimationFrame(raf);
+            window.clearTimeout(timeout);
+            window.removeEventListener('resize', restart);
+            thumbsHost.removeEventListener('animationend', restart);
+            thumbsHost.removeEventListener('transitionend', restart);
+            observer.disconnect();
+        };
+    }, [thumbsHost, thumbsOpen, width, url]);
+
     useEffect(() => {
         const pagesNode = pagesRef.current;
 
@@ -565,6 +740,8 @@ export default forwardRef(function PdfPreview({ url, onFormStateChange, onSelect
         pageViewsRef.current = [];
         setLoading(true);
         setError(null);
+        setThumbnails([]);
+        setCurrentPage(1);
         pagesNode?.replaceChildren();
         pdfRef.current = null;
         fieldObjectsRef.current = null;
@@ -614,6 +791,10 @@ export default forwardRef(function PdfPreview({ url, onFormStateChange, onSelect
 
                 if (!cancelled) {
                     onFormStateChangeRef.current?.({ fillable, dirty: false });
+                    setThumbnails(Array.from({ length: pdf.numPages }, (_, index) => ({
+                        pageNumber: index + 1,
+                        src: null,
+                    })));
                 }
 
                 const firstPage = await pdf.getPage(1);
@@ -673,7 +854,37 @@ export default forwardRef(function PdfPreview({ url, onFormStateChange, onSelect
 
                     applyFormFontToInputs(pagesNode, fieldFontScalesRef.current);
                     paintSignatureOverlays(pagesNode, pageViews, stampsRef.current);
+                    setThumbnails(pageViews.map((view, index) => ({
+                        pageNumber: index + 1,
+                        src: thumbnailFromCanvas(pageCanvas(view, pagesNode, index + 1)),
+                    })));
                     setLoading(false);
+                }
+
+                const missing = pageViews
+                    .map((view, index) => ({
+                        pageNumber: index + 1,
+                        src: thumbnailFromCanvas(pageCanvas(view, pagesNode, index + 1)),
+                    }))
+                    .filter((thumb) => thumb.src == null);
+
+                for (const thumb of missing) {
+                    if (cancelled) {
+                        return;
+                    }
+
+                    try {
+                        const page = await pdf.getPage(thumb.pageNumber);
+                        const src = await renderPageThumbnail(page);
+
+                        if (!cancelled && src) {
+                            setThumbnails((current) =>
+                                current.map((item) => (item.pageNumber === thumb.pageNumber ? { ...item, src } : item)),
+                            );
+                        }
+                    } catch {
+                        // Keep the numbered placeholder if a thumbnail cannot be drawn.
+                    }
                 }
             })
             .catch((caught) => {
@@ -820,28 +1031,184 @@ export default forwardRef(function PdfPreview({ url, onFormStateChange, onSelect
         };
     }, [placingSignature]);
 
-    return (
+    useEffect(() => {
+        const frame = frameRef.current;
+        const pagesNode = pagesRef.current;
+
+        if (loading || frame == null || pagesNode == null) {
+            return;
+        }
+
+        let frameHandle = 0;
+
+        const syncCurrentPage = () => {
+            const pages = pagesNode.querySelectorAll('.page');
+
+            if (pages.length === 0) {
+                return;
+            }
+
+            const rootBox = frame.getBoundingClientRect();
+            const probe = rootBox.top + Math.min(96, rootBox.height * 0.22);
+            let nextPage = 1;
+
+            for (const page of pages) {
+                if (page.getBoundingClientRect().bottom > probe) {
+                    const pageNumber = Number(page.dataset.pageNumber);
+                    nextPage = Number.isFinite(pageNumber) ? pageNumber : nextPage;
+                    break;
+                }
+            }
+
+            setCurrentPage((current) => (current === nextPage ? current : nextPage));
+        };
+
+        const onScroll = () => {
+            if (frameHandle !== 0) {
+                return;
+            }
+
+            frameHandle = requestAnimationFrame(() => {
+                frameHandle = 0;
+                syncCurrentPage();
+            });
+        };
+
+        frame.addEventListener('scroll', onScroll, { passive: true });
+        syncCurrentPage();
+
+        return () => {
+            frame.removeEventListener('scroll', onScroll);
+
+            if (frameHandle !== 0) {
+                cancelAnimationFrame(frameHandle);
+            }
+        };
+    }, [loading, thumbnails.length]);
+
+    useEffect(() => {
+        thumbsRef.current
+            ?.querySelector(`[data-thumb-page="${currentPage}"]`)
+            ?.scrollIntoView({ block: 'nearest' });
+    }, [currentPage]);
+
+    function goToPage(pageNumber) {
+        const page = pagesRef.current?.querySelector(`.page[data-page-number="${pageNumber}"]`);
+
+        page?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setCurrentPage(pageNumber);
+    }
+
+    function toggleThumbs() {
+        setThumbsOpen((current) => {
+            const next = !current;
+
+            localStorage.setItem(THUMB_OPEN_STORAGE_KEY, next ? '1' : '0');
+
+            return next;
+        });
+    }
+
+    const thumbChrome = (
         <div
-            ref={frameRef}
-            className={`relative flex h-[min(70vh,40rem)] w-full overflow-y-auto bg-neutral-200 [scrollbar-gutter:stable] xl:h-full ${viewScale === 'fit' ? 'justify-center overflow-x-hidden' : 'justify-start overflow-x-auto'} ${placingSignature ? 'cursor-crosshair' : ''}`}
-            data-placing-signature={placingSignature ? 'true' : undefined}
+            data-pdf-thumbs=""
+            className={
+                thumbsHost
+                    ? 'pointer-events-auto absolute z-50 flex flex-col items-stretch gap-2'
+                    : `pointer-events-auto absolute top-3 left-3 z-20 flex flex-col items-stretch gap-2 ${thumbsOpen ? 'h-[min(70vh,36rem)] w-28' : ''}`
+            }
+            style={
+                thumbsHost
+                    ? thumbsOpen
+                        ? {
+                            left: thumbsBox.left,
+                            top: thumbsBox.top,
+                            width: thumbsBox.width,
+                            height: thumbsBox.height,
+                        }
+                        : { left: thumbsBox.left, top: thumbsBox.top }
+                    : undefined
+            }
+            onPointerDown={(event) => event.stopPropagation()}
         >
-            {loading ? (
-                <p className="text-muted-foreground pointer-events-none absolute inset-x-0 top-4 z-10 text-center text-sm">
-                    Loading preview…
-                </p>
+            <Button
+                type="button"
+                variant={thumbsOpen ? 'secondary' : 'outline'}
+                size="icon-sm"
+                className="self-start bg-background shadow-xl"
+                title={thumbsOpen ? 'Hide page thumbnails' : 'Show page thumbnails'}
+                onClick={toggleThumbs}
+            >
+                <GalleryThumbnailsIcon />
+                <span className="sr-only">{thumbsOpen ? 'Hide page thumbnails' : 'Show page thumbnails'}</span>
+            </Button>
+            {thumbsOpen && thumbnails.length > 0 ? (
+                <nav
+                    ref={thumbsRef}
+                    aria-label="PDF pages"
+                    className="min-h-0 flex-1 overflow-y-auto rounded-xl border bg-background/95 py-1.5 shadow-xl"
+                >
+                    {thumbnails.map((thumb) => {
+                        const active = currentPage === thumb.pageNumber;
+
+                        return (
+                            <button
+                                key={thumb.pageNumber}
+                                type="button"
+                                data-thumb-page={thumb.pageNumber}
+                                aria-current={active ? 'page' : undefined}
+                                aria-label={`Page ${thumb.pageNumber}`}
+                                title={`Page ${thumb.pageNumber}`}
+                                className={`flex w-full flex-col items-center gap-1 px-1.5 py-1.5 text-xs ${active ? 'bg-muted' : 'hover:bg-muted/70'}`}
+                                onClick={() => goToPage(thumb.pageNumber)}
+                            >
+                                {thumb.src ? (
+                                    <img
+                                        src={thumb.src}
+                                        alt=""
+                                        className={`w-full rounded-sm bg-white shadow-sm ${active ? 'ring-2 ring-ring' : 'ring-1 ring-border'}`}
+                                    />
+                                ) : (
+                                    <span className={`bg-muted aspect-[3/4] w-full rounded-sm ${loading ? 'animate-pulse' : ''} ${active ? 'ring-2 ring-ring' : 'ring-1 ring-border'}`} />
+                                )}
+                                <span className="text-muted-foreground tabular-nums">{thumb.pageNumber}</span>
+                            </button>
+                        );
+                    })}
+                </nav>
             ) : null}
-            {error ? (
-                <p className="text-destructive pointer-events-none absolute inset-x-0 top-4 z-10 text-center text-sm">{error}</p>
-            ) : null}
-            {placingSignature ? (
-                <p className="text-muted-foreground pointer-events-none absolute inset-x-0 top-4 z-10 text-center text-sm">
-                    Click the page to place the signature. Esc to cancel.
-                </p>
-            ) : null}
-            <div className="flex min-h-full w-full flex-col items-center p-4">
-                <div ref={pagesRef} className="pdfViewer w-full" />
-            </div>
         </div>
+    );
+
+    return (
+        <>
+            {thumbsHost && thumbsBox ? createPortal(thumbChrome, thumbsHost) : null}
+            <div
+                className={`relative h-[min(70vh,40rem)] w-full xl:h-full ${placingSignature ? 'cursor-crosshair' : ''}`}
+                data-placing-signature={placingSignature ? 'true' : undefined}
+            >
+                <div
+                    ref={frameRef}
+                    className={`flex h-full w-full overflow-y-auto bg-neutral-200 [scrollbar-gutter:stable] ${viewScale === 'fit' ? 'justify-center overflow-x-hidden' : 'justify-start overflow-x-auto'}`}
+                >
+                    {loading ? (
+                        <p className="text-muted-foreground pointer-events-none absolute inset-x-0 top-4 z-10 text-center text-sm">
+                            Loading preview…
+                        </p>
+                    ) : null}
+                    {error ? (
+                        <p className="text-destructive pointer-events-none absolute inset-x-0 top-4 z-10 text-center text-sm">{error}</p>
+                    ) : null}
+                    {placingSignature ? (
+                        <p className="text-muted-foreground pointer-events-none absolute inset-x-0 top-4 z-10 text-center text-sm">
+                            Click the page to place the signature. Esc to cancel.
+                        </p>
+                    ) : null}
+                    <div className="flex min-h-full w-full flex-col items-center p-4">
+                        <div ref={pagesRef} className="pdfViewer w-full" />
+                    </div>
+                </div>
+            </div>
+        </>
     );
 });

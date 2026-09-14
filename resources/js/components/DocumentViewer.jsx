@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { InfoIcon, SignatureIcon, SparklesIcon, XIcon } from 'lucide-react';
+import { HistoryIcon, InfoIcon, PenLineIcon, SparklesIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -9,6 +9,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import DocumentHistoryDialog from './DocumentHistoryDialog';
 import DocumentInfoDialog from './DocumentInfoDialog';
 import PdfPreview, { FORM_FONT_MAX, FORM_FONT_MIN, FORM_FONT_STEP } from './PdfPreview';
 import PdfSignatureDialog from './PdfSignatureDialog';
@@ -70,6 +71,7 @@ export default function DocumentViewer({ document: file, onClose, onDocumentChan
     const current = file ?? viewed;
     const kind = current ? previewKind(current.mime_type, current.name) : 'other';
     const [infoOpen, setInfoOpen] = useState(false);
+    const [historyOpen, setHistoryOpen] = useState(false);
     const [text, setText] = useState('');
     const [textError, setTextError] = useState(null);
     const [contextOpen, setContextOpen] = useState(false);
@@ -131,6 +133,7 @@ export default function DocumentViewer({ document: file, onClose, onDocumentChan
         setContextError(null);
         setLoadingContext(false);
         setInfoOpen(false);
+        setHistoryOpen(false);
         setPdfForm({ fillable: false, dirty: false });
         setSavingPdf(false);
         setDownloadingPdf(false);
@@ -178,6 +181,7 @@ export default function DocumentViewer({ document: file, onClose, onDocumentChan
 
     function closeViewer() {
         setInfoOpen(false);
+        setHistoryOpen(false);
         setContextOpen(false);
         setSignOpen(false);
         pdfPreviewRef.current?.cancelSignature?.();
@@ -314,10 +318,24 @@ export default function DocumentViewer({ document: file, onClose, onDocumentChan
         <>
         <Dialog
             open={open}
-            onOpenChange={(nextOpen) => {
+            onOpenChange={(nextOpen, eventDetails) => {
                 if (!nextOpen) {
+                    const target = eventDetails?.event?.target;
+
+                    if (target instanceof Element && target.closest('[data-pdf-thumbs]')) {
+                        eventDetails.cancel();
+
+                        return;
+                    }
+
                     if (signOpen) {
                         setSignOpen(false);
+
+                        return;
+                    }
+
+                    if (historyOpen) {
+                        setHistoryOpen(false);
 
                         return;
                     }
@@ -331,7 +349,7 @@ export default function DocumentViewer({ document: file, onClose, onDocumentChan
                 }
             }}
         >
-            <DialogContent showCloseButton={false} className="flex max-h-[90vh] w-[calc(100%-2rem)] flex-col sm:max-w-4xl xl:h-[90vh] xl:max-w-6xl 2xl:max-w-7xl">
+            <DialogContent showCloseButton={false} className="flex max-h-[90vh] w-[calc(100%-2rem)] flex-col overflow-visible sm:max-w-4xl xl:h-[90vh] xl:max-w-6xl 2xl:max-w-7xl">
                 <DialogHeader className="shrink-0 pr-8">
                     <div className="flex min-w-0 items-center gap-2">
                         <DialogTitle className="min-w-0 flex-1 truncate">{current?.name ?? 'Document'}</DialogTitle>
@@ -394,7 +412,7 @@ export default function DocumentViewer({ document: file, onClose, onDocumentChan
                                             title="Sign PDF"
                                             onClick={() => setSignOpen(true)}
                                         >
-                                            <SignatureIcon />
+                                            <PenLineIcon />
                                             <span className="sr-only">Sign</span>
                                         </Button>
                                         {pdfSaveError ? <p className="text-destructive max-w-28 truncate text-xs">{pdfSaveError}</p> : null}
@@ -409,6 +427,18 @@ export default function DocumentViewer({ document: file, onClose, onDocumentChan
                                     </>
                                 ) : null}
                             </div>
+                        ) : null}
+                        {kind === 'pdf' ? (
+                            <Button
+                                type="button"
+                                variant={historyOpen ? 'secondary' : 'ghost'}
+                                size="icon-sm"
+                                title="Document history"
+                                onClick={() => setHistoryOpen((current) => !current)}
+                            >
+                                <HistoryIcon />
+                                <span className="sr-only">Document history</span>
+                            </Button>
                         ) : null}
                         {current?.uses_id_metadata ? (
                             <Button
@@ -548,6 +578,11 @@ export default function DocumentViewer({ document: file, onClose, onDocumentChan
                 </Button>
             </DialogContent>
         </Dialog>
+        <DocumentHistoryDialog
+            document={current}
+            open={historyOpen}
+            onOpenChange={setHistoryOpen}
+        />
         <DocumentInfoDialog
             document={current}
             open={infoOpen}
