@@ -14,6 +14,11 @@ class GhostscriptPdfCompressor implements PdfCompressor
         private ?string $pdfSettings = null,
     ) {}
 
+    public function withPdfSettings(string $pdfSettings): self
+    {
+        return new self($this->binary, $pdfSettings);
+    }
+
     public function supports(string $mimeType, string $filename): bool
     {
         return str_ends_with(strtolower($filename), '.pdf')

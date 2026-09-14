@@ -111,9 +111,51 @@ class StoredPdfCompressor
         }
     }
 
-    private function shouldCompress(string $mimeType, string $originalName, string $absolutePath): bool
+    /**
+     * Compress a PDF for download without replacing the stored file.
+     * Fillable forms are allowed here so a filled copy can be shrunk.
+     *
+     * @param  'ebook'|'screen'  $quality
+     */
+    public function compressForDownload(string $absolutePath, string $mimeType, string $originalName, string $quality): string
     {
-        if (! $this->settings->shouldCompress() || $this->hasFormFields($absolutePath)) {
+        $original = (string) file_get_contents($absolutePath);
+
+        if (! in_array($quality, PdfCompressionSettings::PRESETS, true)) {
+            return $original;
+        }
+
+        if (! $this->compressor->supports($mimeType, $originalName) && ! $this->fileStartsWithPdf($absolutePath)) {
+            return $original;
+        }
+
+        $compressor = $this->compressor instanceof GhostscriptPdfCompressor
+            ? $this->compressor->withPdfSettings($quality)
+            : $this->compressor;
+
+        try {
+            $compressed = $compressor->compress($absolutePath);
+
+            return $compressed !== '' ? $compressed : $original;
+        } catch (Throwable $exception) {
+            Log::warning('PDF compression failed; downloading the uncompressed file.', [
+                'name' => $originalName,
+                'quality' => $quality,
+                'driver' => $this->compressor::class,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return $original;
+        }
+    }
+
+    private function shouldCompress(string $mimeType, string $originalName, string $absolutePath, bool $skipFillable = true): bool
+    {
+        if (! $this->settings->shouldCompress()) {
+            return false;
+        }
+
+        if ($skipFillable && $this->hasFormFields($absolutePath)) {
             return false;
         }
 

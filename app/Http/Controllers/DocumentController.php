@@ -7,6 +7,7 @@ use App\Ai\IdMetadataExtractor;
 use App\Ai\OllamaClient;
 use App\Enums\DocType;
 use App\Http\Requests\AskDocumentAiRequest;
+use App\Http\Requests\CompressFilledPdfDownloadRequest;
 use App\Http\Requests\ListDocumentsRequest;
 use App\Http\Requests\StoreDocumentRequest;
 use App\Http\Requests\UpdateDocumentFileRequest;
@@ -91,6 +92,29 @@ class DocumentController extends Controller
             $document->filepath,
             $document->title,
         );
+    }
+
+    public function downloadCompressed(CompressFilledPdfDownloadRequest $request, Document $document, StoredPdfCompressor $compression): Response
+    {
+        abort_unless(
+            str_contains(strtolower((string) $document->mime_type), 'pdf')
+                || str_ends_with(strtolower($document->title), '.pdf'),
+            422,
+            'Only PDF documents can be compressed for download.',
+        );
+
+        $file = $request->file('file');
+        $contents = $compression->compressForDownload(
+            $file->getRealPath() ?: $file->getPathname(),
+            (string) ($file->getClientMimeType() ?: $document->mime_type),
+            $document->title,
+            $request->validated('quality'),
+        );
+
+        return response($contents, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="'.$document->title.'"',
+        ]);
     }
 
     public function ocr(Document $document): JsonResponse

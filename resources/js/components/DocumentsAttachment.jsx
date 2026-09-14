@@ -62,9 +62,17 @@ export default function DocumentsAttachment({ onAttach }) {
                 }
             }}
         >
-            <DialogTrigger render={<Button />}>
+            <DialogTrigger
+                render={
+                    <Button
+                        size="icon-lg"
+                        title="Attach document"
+                        className="fixed end-6 bottom-20 z-40 size-14 rounded-full shadow-lg hover:shadow-xl [&_svg:not([class*='size-'])]:size-6"
+                    />
+                }
+            >
                 <Paperclip />
-                Attach
+                <span className="sr-only">Attach</span>
             </DialogTrigger>
             <DialogContent showCloseButton={!busy} className="sm:max-w-md">
                 <DialogHeader>

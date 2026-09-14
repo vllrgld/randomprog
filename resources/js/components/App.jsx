@@ -90,7 +90,7 @@ function Dashboard({ onLogout }) {
             return;
         }
 
-        setDeleting(true);n
+        setDeleting(true);
         setDeleteError(null);
 
         try {
@@ -115,29 +115,19 @@ function Dashboard({ onLogout }) {
                         {page === 'home' ? 'Home' : page === 'documents' ? 'Documents' : 'Settings'}
                     </h1>
                     {page === 'documents' && (
-                        <>
-                            <div className="flex min-w-0 flex-1 justify-center px-2">
-                                <div className="relative w-full max-w-xs">
-                                    <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                                    <Input
-                                        type="search"
-                                        value={searchInput}
-                                        onChange={(event) => setSearchInput(event.target.value)}
-                                        placeholder="Search OCR text…"
-                                        aria-label="Search OCR text"
-                                        className="pl-8"
-                                    />
-                                </div>
-                            </div>
-                            <div className="shrink-0">
-                                <DocumentsAttachment
-                                    onAttach={(document) => {
-                                        setAttachments((current) => [document, ...current]);
-                                        setPreview(document);
-                                    }}
+                        <div className="flex min-w-0 flex-1 justify-center px-2">
+                            <div className="relative w-full max-w-xs">
+                                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                                <Input
+                                    type="search"
+                                    value={searchInput}
+                                    onChange={(event) => setSearchInput(event.target.value)}
+                                    placeholder="Search OCR text…"
+                                    aria-label="Search OCR text"
+                                    className="pl-8"
                                 />
                             </div>
-                        </>
+                        </div>
                     )}
                 </header>
 
@@ -207,6 +197,14 @@ function Dashboard({ onLogout }) {
                                         attachment.id === document.id ? { ...attachment, ...document } : attachment,
                                     ),
                                 );
+                            }}
+                        />
+                    ) : null}
+                    {page === 'documents' ? (
+                        <DocumentsAttachment
+                            onAttach={(document) => {
+                                setAttachments((current) => [document, ...current]);
+                                setPreview(document);
                             }}
                         />
                     ) : null}

@@ -76,7 +76,7 @@ export default function Settings() {
             <div className="grid gap-1">
                 <h2 className="text-sm font-medium">PDF compression quality</h2>
                 <p className="text-muted-foreground text-sm">
-                    Applied when a PDF is attached. Smaller presets make smaller files.
+                    Applied when a PDF is attached. Fillable forms stay uncompressed on upload; you can compress them when downloading.
                 </p>
             </div>
             <fieldset className="grid gap-2" disabled={busy || quality == null}>

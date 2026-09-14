@@ -18,7 +18,6 @@ return new class extends Migration
             $table->string('middle_name')->nullable();
             $table->string('last_name')->nullable();
             $table->string('suffix')->nullable();
-            $table->unsignedTinyInteger('age')->nullable();
             $table->string('id_number')->nullable();
             $table->string('sex')->nullable();
             $table->string('civil_status')->nullable();

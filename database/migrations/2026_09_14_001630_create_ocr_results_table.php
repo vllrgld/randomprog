@@ -18,6 +18,12 @@ return new class extends Migration
             $table->longText('parsed_text')->nullable();
             $table->timestamps();
         });
+
+        if ($this->supportsFullText()) {
+            Schema::table('ocr_results', function (Blueprint $table) {
+                $table->fullText('parsed_text', 'ocr_results_parsed_text_fulltext');
+            });
+        }
     }
 
     /**
@@ -26,5 +32,10 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('ocr_results');
+    }
+
+    private function supportsFullText(): bool
+    {
+        return in_array(Schema::getConnection()->getDriverName(), ['mysql', 'mariadb'], true);
     }
 };

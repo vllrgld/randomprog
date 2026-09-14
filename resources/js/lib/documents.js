@@ -93,6 +93,31 @@ export async function saveDocumentFile(documentId, blob, filename) {
     return payload;
 }
 
+export async function compressDocumentDownload(documentId, blob, filename, quality) {
+    const body = new FormData();
+    body.append('file', blob, filename);
+    body.append('quality', quality);
+
+    const response = await fetch(`/documents/${documentId}/compressed-download`, {
+        method: 'POST',
+        headers: {
+            Accept: 'application/pdf',
+            'X-CSRF-TOKEN': csrfToken(),
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'same-origin',
+        body,
+    });
+
+    if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+
+        throw new Error(payload?.message ?? 'Could not compress the PDF.');
+    }
+
+    return response.blob();
+}
+
 export async function deleteDocument(documentId) {
     const response = await fetch(`/documents/${documentId}`, {
         method: 'DELETE',

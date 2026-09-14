@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import colors from 'picocolors';
@@ -40,6 +41,85 @@ function lanIPv4() {
 const lanHost = lanIPv4();
 const appLanUrl = `http://${lanHost}/`;
 
+function patchPdfWorkerSource(code) {
+    const open =
+        '_computeFontSize(e,t,n,a,s){let{fontSize:r}=this.data.defaultAppearanceData,i=1.35*(r||12),o=Math.round(e/i);if(!r){';
+    const openPatched =
+        '_computeFontSize(e,t,n,a,s){let{fontSize:r}=this.data.defaultAppearanceData,i=1.35*(r||12),o=Math.round(e/i);{';
+    const fit = 'r=roundWithTwoDigits(Math.min(e/1.35,t/s));';
+    const fitPatched = 'r=roundWithTwoDigits(Math.max(.5,Math.min(r||e/1.35,e/1.35,t/s)));';
+
+    if (!code.includes(open) || !code.includes(fit)) {
+        throw new Error('Could not patch pdf.js to shrink long form text to the field.');
+    }
+
+    return code.replace(open, openPatched).replace(fit, fitPatched);
+}
+
+function isPdfWorkerModule(id) {
+    const [pathname, query = ''] = id.split('?');
+
+    if (!pathname.replace(/\\/g, '/').endsWith('pdf.worker.min.mjs')) {
+        return false;
+    }
+
+    return !query.split('&').some((part) => part === 'url' || part.startsWith('url='));
+}
+
+function patchPdfjsWorkerFont() {
+    const workerPath = path.resolve(__dirname, 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs');
+    let patched;
+
+    function patchedWorker() {
+        patched ??= patchPdfWorkerSource(fs.readFileSync(workerPath, 'utf8'));
+
+        return patched;
+    }
+
+    return {
+        name: 'patch-pdfjs-worker-font',
+        enforce: 'pre',
+        transform(code, id) {
+            if (!isPdfWorkerModule(id)) {
+                return;
+            }
+
+            return patchPdfWorkerSource(code);
+        },
+        configureServer(server) {
+            server.middlewares.use((req, res, next) => {
+                if (!isPdfWorkerModule(req.url ?? '')) {
+                    next();
+
+                    return;
+                }
+
+                res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+                res.setHeader('Cache-Control', 'no-cache');
+                res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+                res.end(patchedWorker());
+            });
+        },
+        generateBundle(_, bundle) {
+            for (const item of Object.values(bundle)) {
+                const source = item.type === 'asset' ? item.source : item.code;
+
+                if (typeof source !== 'string' || !source.includes('_computeFontSize(e,t,n,a,s)')) {
+                    continue;
+                }
+
+                const next = patchPdfWorkerSource(source);
+
+                if (item.type === 'asset') {
+                    item.source = next;
+                } else {
+                    item.code = next;
+                }
+            }
+        },
+    };
+}
+
 function printAppLanUrl() {
     return {
         name: 'print-app-lan-url',
@@ -63,6 +143,7 @@ export default defineConfig({
             refresh: true,
         }),
         printAppLanUrl(),
+        patchPdfjsWorkerFont(),
         react(),
         tailwindcss(),
     ],
@@ -83,5 +164,8 @@ export default defineConfig({
         watch: {
             ignored: ['**/storage/framework/views/**'],
         },
+    },
+    optimizeDeps: {
+        exclude: ['pdfjs-dist'],
     },
 });

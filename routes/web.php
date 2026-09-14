@@ -14,6 +14,7 @@ Route::get('/documents/{document}', [DocumentController::class, 'show'])->name('
 Route::delete('/documents/{document}', [DocumentController::class, 'destroy'])->name('documents.destroy');
 Route::post('/documents/{document}/file', [DocumentController::class, 'updateFile'])->name('documents.file.update');
 Route::get('/documents/{document}/download', [DocumentController::class, 'download'])->name('documents.download');
+Route::post('/documents/{document}/compressed-download', [DocumentController::class, 'downloadCompressed'])->name('documents.download.compressed');
 Route::get('/documents/{document}/ocr', [DocumentController::class, 'ocr'])->name('documents.ocr');
 Route::post('/documents/{document}/ai', [DocumentController::class, 'ai'])->name('documents.ai');
 Route::put('/documents/{document}/id-metadata', [DocumentController::class, 'updateIdMetadata'])->name('documents.id-metadata.update');

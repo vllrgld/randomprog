@@ -10,6 +10,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Assert;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -199,6 +200,144 @@ class DocumentTest extends TestCase
         $this->get(route('documents.download', $document))
             ->assertOk()
             ->assertDownload('report.pdf');
+    }
+
+    public function test_fillable_pdf_uploads_skip_compression(): void
+    {
+        Storage::fake('documents');
+        $this->fakeOcrSpace();
+
+        $this->app->instance(PdfCompressor::class, new class implements PdfCompressor
+        {
+            public function supports(string $mimeType, string $filename): bool
+            {
+                return true;
+            }
+
+            public function compress(string $absolutePath): string
+            {
+                throw new RuntimeException('should not compress fillable forms');
+            }
+        });
+
+        $contents = "%PDF-1.4\n1 0 obj<< /AcroForm << /Fields [] >> >>endobj\n%%EOF";
+
+        $this->post(route('documents.store'), [
+            'file' => UploadedFile::fake()->createWithContent('form.pdf', $contents),
+        ], [
+            'Accept' => 'application/json',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('compressed', false);
+
+        $document = Document::query()->first();
+
+        $this->assertSame($contents, Storage::disk('documents')->get($document->filepath));
+    }
+
+    public function test_filled_pdf_download_can_be_compressed(): void
+    {
+        Storage::fake('documents');
+        app(PdfCompressionSettings::class)->setQuality('ebook');
+        Storage::disk('documents')->put('form.pdf', '%PDF-stored');
+
+        $document = Document::query()->create($this->documentAttributes([
+            'title' => 'form.pdf',
+            'filepath' => 'form.pdf',
+            'file_size' => 11,
+        ]));
+
+        $this->app->instance(PdfCompressor::class, new class implements PdfCompressor
+        {
+            public function supports(string $mimeType, string $filename): bool
+            {
+                return true;
+            }
+
+            public function compress(string $absolutePath): string
+            {
+                Assert::assertStringContainsString('/AcroForm', (string) file_get_contents($absolutePath));
+
+                return '%PDF-compressed-download';
+            }
+        });
+
+        $filled = "%PDF-1.4\n1 0 obj<< /AcroForm << /Fields [] >> >>endobj\n%%EOF";
+
+        $this->post(route('documents.download.compressed', $document), [
+            'file' => UploadedFile::fake()->createWithContent('form.pdf', $filled),
+            'quality' => 'ebook',
+        ], [
+            'Accept' => 'application/pdf',
+        ])
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf')
+            ->assertDownload('form.pdf')
+            ->assertContent('%PDF-compressed-download');
+
+        $this->assertSame('%PDF-stored', Storage::disk('documents')->get('form.pdf'));
+    }
+
+    public function test_compressed_download_uses_requested_quality_even_when_uploads_are_original(): void
+    {
+        Storage::fake('documents');
+        app(PdfCompressionSettings::class)->setQuality('original');
+        Storage::disk('documents')->put('form.pdf', '%PDF-stored');
+
+        $document = Document::query()->create($this->documentAttributes([
+            'title' => 'form.pdf',
+            'filepath' => 'form.pdf',
+            'file_size' => 11,
+        ]));
+
+        $this->app->instance(PdfCompressor::class, new class implements PdfCompressor
+        {
+            public function supports(string $mimeType, string $filename): bool
+            {
+                return true;
+            }
+
+            public function compress(string $absolutePath): string
+            {
+                return '%PDF-screen-download';
+            }
+        });
+
+        $filled = "%PDF-1.4\n1 0 obj<< /AcroForm << /Fields [] >> >>endobj\n%%EOF";
+
+        $this->post(route('documents.download.compressed', $document), [
+            'file' => UploadedFile::fake()->createWithContent('form.pdf', $filled),
+            'quality' => 'screen',
+        ], [
+            'Accept' => 'application/pdf',
+        ])
+            ->assertOk()
+            ->assertContent('%PDF-screen-download');
+
+        $this->assertSame('%PDF-stored', Storage::disk('documents')->get('form.pdf'));
+    }
+
+    public function test_compressed_download_requires_ebook_or_screen_quality(): void
+    {
+        Storage::fake('documents');
+        Storage::disk('documents')->put('form.pdf', '%PDF-stored');
+
+        $document = Document::query()->create($this->documentAttributes([
+            'title' => 'form.pdf',
+            'filepath' => 'form.pdf',
+            'file_size' => 11,
+        ]));
+
+        $filled = "%PDF-1.4\n1 0 obj<< /AcroForm << /Fields [] >> >>endobj\n%%EOF";
+
+        $this->post(route('documents.download.compressed', $document), [
+            'file' => UploadedFile::fake()->createWithContent('form.pdf', $filled),
+            'quality' => 'original',
+        ], [
+            'Accept' => 'application/json',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('quality');
     }
 
     public function test_uploads_default_to_the_unknown_doc_type(): void
